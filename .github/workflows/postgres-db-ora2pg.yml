@@ -29,6 +29,6 @@ jobs:
         echo "APPLICATION_IMAGE_TAG=${{ env.APPLICATION_NAME }}:$APPLICATION_VERSION" >> $GITHUB_ENV
 
     - uses: actions/checkout@v2
-    - name: Build and publish Docker Image to Artifactory - ${{ env.APPLICATION_VERSION }}
+    - name: Build and publish Docker Image  - ${{ env.APPLICATION_VERSION }}
       run: |
         docker build -t $APPLICATION_IMAGE_TAG -f ora2pg/Dockerfile .

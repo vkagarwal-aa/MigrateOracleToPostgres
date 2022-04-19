@@ -16,9 +16,12 @@ The migration is set up by building a docker image.
 ### 3. Build Schema
 		
 ### 4. Export data from Oracle and Import in Postgres tables
-		a. Create GitHub secrets to connect to Oracle DB hat need to be migrated
-		b. Build Docker Image
-		c. Run the image with input parameter
+[Manual Steps to setup ora2pg in local machine](documentation/dbmigration.md)
+
+    Automation to Build docker image and run it to perform migration
+        a. Create GitHub secrets to connect to Oracle DB hat need to be migrated
+        b. Build Docker Image
+        c. Run the image with input parameter
     
 
 
