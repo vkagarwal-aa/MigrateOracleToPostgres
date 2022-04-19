@@ -1,0 +1,77 @@
+name: DB Update
+on:
+  repository_dispatch:
+    types: [ schema-update ]
+
+  #Enables manual workflow runs
+  workflow_dispatch:
+    #inputs to decide the region and storage account region
+    inputs:
+      environment:
+        description: 'Environment'              # Friendly description to be shown in the UI instead of 'name'
+        required: true                          # Input has to be provided for the workflow to run
+        type: choice
+        options:
+          - "dev"
+          - "preprod"
+          - "prod"
+
+      region:
+        description: 'Azure Region'             # Friendly description to be shown in the UI instead of 'name'
+        required: true                          # Input has to be provided for the workflow to run
+        type: choice
+        options:
+          - "eastus"
+          - "westus"
+
+      dbupdate:
+        description: 'DB Update Type'           # Friendly description to be shown in the UI instead of 'name'
+        required: true                          # Input has to be provided for the workflow to run
+        type: choice
+        options:
+          - "DML"
+          - "DDL"
+
+      script:
+        description: 'DB Script'                # Friendly description to be shown in the UI instead of 'name'
+        default: ''                             # Default value if no value is explicitly provided
+        required: true                          # Input has to be provided for the workflow to run
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+env:
+  ENVIRONMENT: ${{ github.event.client_payload.slash_command.args.named.environment || github.event.inputs.environment }}
+  REGION: ${{ github.event.client_payload.slash_command.args.named.region || github.event.inputs.region }}
+  DBUPDATE: ${{ github.event.client_payload.slash_command.args.named.dbupdate || github.event.inputs.dbupdate }}
+  SCRIPT: ${{ github.event.client_payload.slash_command.args.named.script || github.event.inputs.script }}
+
+jobs:
+  setup-environment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Environment
+        id: dbUpdate
+        run: |
+          if [[ ${{ github.event.client_payload.dbupdate || github.event.inputs.dbupdate }} == 'DDL' ]]; then
+            echo "::set-output name=db_update_folder::postgres_schema"
+          elif [[ ${{ github.event.client_payload.dbupdate || github.event.inputs.dbupdate }} == 'DML' ]]; then
+            echo "::set-output name=db_update_folder::postgres_dml"
+    outputs:
+      db_update_folder: ${{ steps.dbUpdate.outputs.db_update_folder }}
+
+  update:
+    environment: ${{ github.event.client_payload.environment || github.event.inputs.environment }}
+    name: Update Script - ${{ github.event.client_payload.environment || github.event.inputs.environment }} - ${{ github.event.client_payload.region || github.event.inputs.region }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2.3.2
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - uses: azure/postgresql@v1
+        with:
+          connection-string: ${{ secrets.AZURE_POSTGRESQL_CONN }}
+          server-name: Planning
+          plsql-file: ${{ needs.setup-environment.outputs.db_update_folder}}/${{ env.SCRIPT }}

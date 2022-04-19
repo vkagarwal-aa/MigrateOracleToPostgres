@@ -1,0 +1,90 @@
+name: Database Build
+on:
+  #Enables manual workflow runs
+  workflow_dispatch:
+    #inputs to decide the region and storage account region
+    inputs:
+      environment:
+        description: 'Environment'              # Friendly description to be shown in the UI instead of 'name'
+        required: true                          # Input has to be provided for the workflow to run
+        type: choice
+        options:
+          - "dev"
+          - "preprod"
+          - "prod"
+
+      region:
+        description: 'Azure Region'             # Friendly description to be shown in the UI instead of 'name'
+        required: true                          # Input has to be provided for the workflow to run
+        type: choice
+        options:
+          - "eastus"
+          - "westus"
+
+      server:
+        description: 'DB Server name'   # Friendly description to be shown in the UI instead of 'name'
+        default: ''                       # Default value if no value is explicitly provided
+        required: false                   # Input has to be provided for the workflow to run
+
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+env:
+  ENVIRONMENT               : ${{ github.event.inputs.environment }}
+  REGION                    : ${{ github.event.inputs.region }}
+  TERRAFORM_VERSION         : 1.1.8
+  ARM_CLIENT_ID: ${{ secrets.TF_ARM_CLIENT_ID }}               # Service Principal ClientId with permissions to Resource Group
+  ARM_CLIENT_SECRET: ${{ secrets.TF_ARM_CLIENT_SECRET }}       # Service Principal Secret with permissions to Resource Group
+  ARM_SUBSCRIPTION_ID: ${{ secrets.TF_AZURE_SUBSCRIPTION_ID }} # Azure Subscription ID
+  ARM_TENANT_ID: ${{ secrets.TF_AZURE_TENANT_ID }}             # Azure TenantId
+
+jobs:
+  create-database:
+    environment: ${{ github.event.inputs.environment }}
+    name: Create Databse - ${{ github.event.inputs.environment }} - ${{ github.event.inputs.region }}
+    runs-on: ubuntu-latest
+    env:
+      ARM_ACCESS_KEY        : ${{ github.event.inputs.region == 'eastus' && secrets.TF_EASTUS_ARM_ACCESS_KEY || secrets.TF_WESTUS_ARM_ACCESS_KEY }}    # Terraform Storage Account Shared Key for State File
+
+    steps:
+      - uses: actions/checkout@v2.3.2
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+
+  create-schema:
+    environment: ${{ github.event.inputs.environment }}
+    name: Create Schema - ${{ github.event.inputs.environment }} - ${{ github.event.inputs.region }}
+    runs-on: ubuntu-latest
+    needs: create-database
+
+    steps:
+      - uses: actions/checkout@v2.3.2
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Add FAR Rule
+        run: |
+          az postgres server firewall-rule create --resource-group <resource group name> --server ${{ github.event.inputs.server }} --name AllowIps --start-ip-address 0.0.0.0 --end-ip-address 255.255.255.255
+
+      - uses: azure/postgresql@v1
+        with:
+          connection-string: ${{ secrets.AZURE_POSTGRESQL_CONN }}
+          server-name: ${{ github.event.inputs.server }}
+          plsql-file: "postgres_schema/STEP1_Create_Role_User.sql"
+
+      - uses: azure/postgresql@v1
+        with:
+          connection-string: ${{ secrets.AZURE_POSTGRESQL_CONN }}
+          server-name: ${{ github.event.inputs.server }}
+          plsql-file: "postgres_schema/STEP2_Create_Schema.sql"
+
+      # Always run this step to remove unwanted Ip Ranges.
+      - name: Remove FAR Rule
+        if: always()
+        run: |
+          az postgres server firewall-rule delete --resource-group <resource group name> --server ${{ github.event.inputs.server }} --name AllowIps -y
